@@ -2,10 +2,27 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # Set up the Streamlit page
-st.set_page_config(page_title="Streamlit 2048 Ultimate", layout="centered")
-st.title("🌟 Streamlit 2048: Ultimate")
-st.write("Merge tiles to unlock new elements. Build **256, 512, or 1024** to earn more Magic!")
+st.set_page_config(page_title="2048: Magic Edition", layout="centered")
 
+# --- GAME INSTRUCTIONS ---
+st.title("🌟 2048: Magic Edition")
+
+st.markdown("""
+### 📖 How to Play
+* **Goal:** Merge matching numbers to reach the legendary **2048** tile.
+* **Desktop Controls:** Use your **Arrow Keys** (Left, Right, Up, Down) to slide all tiles on the board.
+* **Mobile Controls:** Simply **Swipe** across the game board on your touchscreen.
+* **Merging:** When two tiles with the same number touch, they merge into one (e.g., $2 + 2 = 4$).
+
+### ⚡ Special Abilities
+* ↩️ **Undo:** Made a mistake? Click Undo to go back exactly **one step**.
+* ✨ **Magic Wand (Targeted Delete):** * You start with **1 Magic Wand**. 
+    * When you are stuck, click the Magic button, then **click ANY tile on the board** to instantly destroy it and free up space!
+    * **How to get more:** Every time you successfully merge a **256, 512, or 1024** tile, you earn +1 Magic Wand!
+---
+""")
+
+# --- GAME CODE ---
 game_html = """
 <!DOCTYPE html>
 <html>
@@ -65,13 +82,21 @@ game_html = """
       cursor: pointer;
       flex: 1;
       white-space: nowrap;
+      transition: background-color 0.2s;
     }
-    button:hover { background-color: #9f8b77; }
+    button:hover:not(:disabled) { background-color: #9f8b77; }
     button:disabled { background-color: #55483c; color: #888; cursor: not-allowed; }
     
-    #magic-btn { background-color: #8b5a96; transition: transform 0.1s; }
+    #magic-btn { background-color: #8b5a96; transition: transform 0.1s, background-color 0.2s; }
     #magic-btn:hover:not(:disabled) { background-color: #a06ab0; }
     #magic-btn.bump { transform: scale(1.1); background-color: #d18ce0; }
+    #magic-btn.active { background-color: #ff4757; animation: pulse 1.5s infinite; }
+    
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
     
     .grid-container {
       display: grid;
@@ -90,6 +115,20 @@ game_html = """
       overflow: hidden;
     }
     
+    /* Magic Targeting Styles */
+    .magic-cursor {
+      cursor: crosshair;
+    }
+    .magic-cursor .grid-cell {
+      cursor: crosshair;
+    }
+    .magic-cursor .grid-cell:not(.val-0):hover {
+      opacity: 0.6;
+      transform: scale(0.95);
+      box-shadow: inset 0 0 20px rgba(255, 71, 87, 0.8);
+      border: 2px solid #ff4757;
+    }
+    
     .grid-cell {
       background-color: #cdc1b4;
       border-radius: 4px;
@@ -100,6 +139,7 @@ game_html = """
       font-weight: bold;
       color: #776e65;
       transition: all 0.1s ease-in-out;
+      box-sizing: border-box;
     }
     
     /* Tile Colors */
@@ -151,16 +191,13 @@ game_html = """
       transition: opacity 0.4s, top 0.4s;
       box-shadow: 0 4px 8px rgba(0,0,0,0.3);
       white-space: nowrap;
+      pointer-events: none;
     }
-    #toast.show {
-      visibility: visible;
-      opacity: 1;
-      top: 20px;
-    }
+    #toast.show { visibility: visible; opacity: 1; top: 20px; }
     #toast.magic-theme { background-color: #8b5a96; border: 2px solid #e0b0ff; }
+    #toast.destroy-theme { background-color: #ff4757; border: 2px solid #ff707f; }
     #toast.new-tile-theme { background-color: #f39c12; border: 2px solid #f1c40f; }
     #toast.win-theme { background-color: #edc22e; color: #333; border: 2px solid #fff; font-size: 22px; padding: 25px; }
-
   </style>
 </head>
 <body>
@@ -172,7 +209,7 @@ game_html = """
 
   <div class="controls">
     <button onclick="undoMove()" id="undo-btn">↩️ Undo</button>
-    <button onclick="useMagic()" id="magic-btn">✨ Magic (1)</button>
+    <button onclick="toggleMagic()" id="magic-btn">✨ Magic (1)</button>
     <button onclick="resetGame()">🔄 Restart</button>
   </div>
 
@@ -196,12 +233,14 @@ game_html = """
     let score = 0;
     let bestScore = localStorage.getItem("2048-best") || 0;
     
-    // New Feature Variables
     let historyBoard = null;
     let historyScore = 0;
     let magicCount = 1;
     let unlockedTiles = new Set();
     let toastTimeout;
+    
+    // Feature: Targeting Magic State
+    let isSelectingTarget = false;
     
     function initUI() {
       document.querySelectorAll('.grid-cell').forEach(e => e.remove());
@@ -215,13 +254,14 @@ game_html = """
       }
       gridElement.appendChild(toast);
       gridElement.appendChild(gameOverScreen); 
+      
+      // Add event listener for magic targeting
+      gridElement.addEventListener("click", handleGridClick);
     }
 
-    // --- CELEBRATION TOAST FUNCTION ---
     function showToast(msg, themeClass, duration = 2500) {
       toast.innerHTML = msg;
       toast.className = `show ${themeClass}`;
-      
       clearTimeout(toastTimeout);
       toastTimeout = setTimeout(() => {
         toast.className = toast.className.replace("show", "").trim();
@@ -229,13 +269,14 @@ game_html = """
     }
 
     function resetGame() {
-      board = [
-        [0,0,0,0], [0,0,0,0], [0,0,0,0], [0,0,0,0]
-      ];
+      board = [[0,0,0,0], [0,0,0,0], [0,0,0,0], [0,0,0,0]];
       score = 0;
       historyBoard = null;
       magicCount = 1;
-      unlockedTiles = new Set([2, 4]); // Start with basic tiles known
+      unlockedTiles = new Set([2, 4]); 
+      isSelectingTarget = false;
+      gridElement.classList.remove("magic-cursor");
+      magicBtn.classList.remove("active");
       
       updateMagicUI();
       gameOverScreen.style.display = "none";
@@ -246,8 +287,13 @@ game_html = """
     }
 
     function updateMagicUI() {
-      magicBtn.innerHTML = `✨ Magic (${magicCount})`;
-      magicBtn.disabled = (magicCount <= 0);
+      if (isSelectingTarget) {
+         magicBtn.innerHTML = "❌ Cancel";
+         magicBtn.disabled = false;
+      } else {
+         magicBtn.innerHTML = `✨ Magic (${magicCount})`;
+         magicBtn.disabled = (magicCount <= 0);
+      }
     }
 
     function saveState() {
@@ -256,6 +302,7 @@ game_html = """
     }
 
     function undoMove() {
+      if (isSelectingTarget) toggleMagic(); // Cancel magic if open
       if (historyBoard) {
         board = historyBoard.map(row => [...row]);
         score = historyScore;
@@ -265,27 +312,44 @@ game_html = """
       }
     }
 
-    function useMagic() {
-      if (magicCount <= 0) return;
+    // --- NEW TARGETED MAGIC SYSTEM ---
+    function toggleMagic() {
+      if (magicCount <= 0 && !isSelectingTarget) return;
       
-      let minVal = Infinity;
-      let targetR = -1; let targetC = -1;
+      isSelectingTarget = !isSelectingTarget;
       
-      for (let r=0; r<4; r++) {
-         for (let c=0; c<4; c++) {
-             if (board[r][c] > 0 && board[r][c] < minVal) {
-                 minVal = board[r][c]; 
-                 targetR = r; targetC = c;
-             }
-         }
+      if (isSelectingTarget) {
+         gridElement.classList.add("magic-cursor");
+         magicBtn.classList.add("active");
+         showToast("🎯 Tap a tile to destroy it!", "magic-theme", 3000);
+      } else {
+         gridElement.classList.remove("magic-cursor");
+         magicBtn.classList.remove("active");
       }
+      updateMagicUI();
+    }
+
+    function handleGridClick(e) {
+      if (!isSelectingTarget) return;
       
-      if (targetR !== -1) {
-          saveState(); 
-          board[targetR][targetC] = 0;
+      let cell = e.target.closest('.grid-cell');
+      if (!cell) return;
+      
+      let index = parseInt(cell.id.replace("cell-", ""));
+      let r = Math.floor(index / 4);
+      let c = index % 4;
+      
+      if (board[r][c] > 0) {
+          saveState(); // Allow undoing the destruction
+          board[r][c] = 0;
           magicCount--;
+          isSelectingTarget = false;
+          
+          gridElement.classList.remove("magic-cursor");
+          magicBtn.classList.remove("active");
           updateMagicUI();
           updateUI();
+          showToast("💥 Tile Destroyed!", "destroy-theme", 1500);
       }
     }
 
@@ -320,11 +384,8 @@ game_html = """
       }
     }
 
-    // --- UPGRADED MERGE LOGIC (Handles Magic & Celebrations) ---
     function slideAndMerge(row) {
       let filtered = row.filter(val => val !== 0);
-      
-      // Track newly merged tiles so we don't spam toasts
       let highestNewMerge = 0;
       let earnedMagicThisTurn = false;
 
@@ -334,25 +395,18 @@ game_html = """
           score += filtered[i];
           let mergedVal = filtered[i];
           
-          // FEATURE: Earn Magic for 256, 512, 1024
           if ([256, 512, 1024].includes(mergedVal)) {
             magicCount++;
             earnedMagicThisTurn = true;
           }
-          
-          // FEATURE: Track if it's a completely new tile
           if (!unlockedTiles.has(mergedVal)) {
             unlockedTiles.add(mergedVal);
-            if (mergedVal > highestNewMerge) {
-               highestNewMerge = mergedVal;
-            }
+            if (mergedVal > highestNewMerge) highestNewMerge = mergedVal;
           }
-          
           filtered[i+1] = 0;
         }
       }
       
-      // Process Celebrations (delay slightly so UI updates first)
       if (highestNewMerge === 2048) {
          setTimeout(() => showToast("🎉 YOU WIN! 2048 REACHED! 🎉", "win-theme", 5000), 200);
       } else if (highestNewMerge > 0) {
@@ -366,12 +420,12 @@ game_html = """
       }
 
       updateMagicUI();
-
       filtered = filtered.filter(val => val !== 0);
       while (filtered.length < 4) { filtered.push(0); }
       return filtered;
     }
 
+    // --- Movement logic ---
     function moveLeft() {
       let moved = false;
       for (let r = 0; r < 4; r++) {
@@ -381,7 +435,6 @@ game_html = """
       }
       return moved;
     }
-
     function moveRight() {
       let moved = false;
       for (let r = 0; r < 4; r++) {
@@ -391,7 +444,6 @@ game_html = """
       }
       return moved;
     }
-
     function moveUp() {
       let moved = false;
       for (let c = 0; c < 4; c++) {
@@ -402,7 +454,6 @@ game_html = """
       }
       return moved;
     }
-
     function moveDown() {
       let moved = false;
       for (let c = 0; c < 4; c++) {
@@ -426,8 +477,10 @@ game_html = """
     }
 
     function handleInput(direction) {
-      saveState(); 
+      // Cancel targeting if player decides to swipe/move instead
+      if (isSelectingTarget) toggleMagic(); 
       
+      saveState(); 
       let moved = false;
       if (direction === "Left") moved = moveLeft();
       else if (direction === "Right") moved = moveRight();
@@ -437,9 +490,7 @@ game_html = """
       if (moved) {
         addRandomTile();
         updateUI();
-        if (checkGameOver()) {
-          gameOverScreen.style.display = "flex";
-        }
+        if (checkGameOver()) gameOverScreen.style.display = "flex";
       } else {
         historyBoard = null; 
       }
@@ -452,28 +503,26 @@ game_html = """
       }
     });
 
-    let touchStartX = 0;
-    let touchStartY = 0;
-
+    let touchStartX = 0; let touchStartY = 0;
     gridElement.addEventListener('touchstart', function(e) {
       touchStartX = e.changedTouches[0].screenX;
       touchStartY = e.changedTouches[0].screenY;
     }, false);
 
     gridElement.addEventListener('touchend', function(e) {
+      // Don't trigger swipe if we are just trying to tap a tile for magic
+      if (isSelectingTarget) return; 
+
       let touchEndX = e.changedTouches[0].screenX;
       let touchEndY = e.changedTouches[0].screenY;
-      
       let dx = touchEndX - touchStartX;
       let dy = touchEndY - touchStartY;
       
       if (Math.abs(dx) > 30 || Math.abs(dy) > 30) {
         if (Math.abs(dx) > Math.abs(dy)) {
-          if (dx > 0) handleInput("Right");
-          else handleInput("Left");
+          if (dx > 0) handleInput("Right"); else handleInput("Left");
         } else {
-          if (dy > 0) handleInput("Down");
-          else handleInput("Up");
+          if (dy > 0) handleInput("Down"); else handleInput("Up");
         }
       }
     }, false);
@@ -485,4 +534,4 @@ game_html = """
 </html>
 """
 
-components.html(game_html, height=750)
+components.html(game_html, height=650)
