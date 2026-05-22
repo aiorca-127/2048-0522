@@ -2,11 +2,10 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # Set up the Streamlit page
-st.set_page_config(page_title="Streamlit 2048 Pro", layout="centered")
-st.title("📱 Streamlit 2048: Pro Edition")
-st.write("Play with **Arrow Keys** on desktop, or **Swipe** on your phone! Use your special abilities below.")
+st.set_page_config(page_title="Streamlit 2048 Ultimate", layout="centered")
+st.title("🌟 Streamlit 2048: Ultimate")
+st.write("Merge tiles to unlock new elements. Build **256, 512, or 1024** to earn more Magic!")
 
-# The HTML, CSS, and JavaScript for the upgraded 2048 game
 game_html = """
 <!DOCTYPE html>
 <html>
@@ -22,7 +21,6 @@ game_html = """
       align-items: center;
       margin: 0;
       padding: 10px;
-      /* Prevent pull-to-refresh on mobile */
       overscroll-behavior-y: contain; 
     }
     
@@ -71,8 +69,9 @@ game_html = """
     button:hover { background-color: #9f8b77; }
     button:disabled { background-color: #55483c; color: #888; cursor: not-allowed; }
     
-    #magic-btn { background-color: #8b5a96; }
+    #magic-btn { background-color: #8b5a96; transition: transform 0.1s; }
     #magic-btn:hover:not(:disabled) { background-color: #a06ab0; }
+    #magic-btn.bump { transform: scale(1.1); background-color: #d18ce0; }
     
     .grid-container {
       display: grid;
@@ -82,15 +81,13 @@ game_html = """
       padding: 10px;
       border-radius: 8px;
       position: relative;
-      
-      /* Essential for mobile swipe! Prevents the browser from scrolling */
       touch-action: none; 
-      
       width: 90vw;
       max-width: 400px;
       height: 90vw;
       max-height: 400px;
       box-sizing: border-box;
+      overflow: hidden;
     }
     
     .grid-cell {
@@ -99,7 +96,7 @@ game_html = """
       display: flex;
       justify-content: center;
       align-items: center;
-      font-size: clamp(24px, 6vw, 36px); /* Auto-scales font for mobile */
+      font-size: clamp(24px, 6vw, 36px);
       font-weight: bold;
       color: #776e65;
       transition: all 0.1s ease-in-out;
@@ -133,6 +130,37 @@ game_html = """
       font-weight: bold;
       z-index: 10;
     }
+
+    /* Celebration Toast CSS */
+    #toast {
+      visibility: hidden;
+      min-width: 250px;
+      background-color: #333;
+      color: #fff;
+      text-align: center;
+      border-radius: 8px;
+      padding: 16px;
+      position: absolute;
+      z-index: 100;
+      top: -60px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 18px;
+      font-weight: bold;
+      opacity: 0;
+      transition: opacity 0.4s, top 0.4s;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+      white-space: nowrap;
+    }
+    #toast.show {
+      visibility: visible;
+      opacity: 1;
+      top: 20px;
+    }
+    #toast.magic-theme { background-color: #8b5a96; border: 2px solid #e0b0ff; }
+    #toast.new-tile-theme { background-color: #f39c12; border: 2px solid #f1c40f; }
+    #toast.win-theme { background-color: #edc22e; color: #333; border: 2px solid #fff; font-size: 22px; padding: 25px; }
+
   </style>
 </head>
 <body>
@@ -149,6 +177,7 @@ game_html = """
   </div>
 
   <div class="grid-container" id="grid">
+    <div id="toast">Message here</div>
     <div id="game-over">
       Game Over!
       <button onclick="resetGame()" style="margin-top: 20px;">Try Again</button>
@@ -161,17 +190,19 @@ game_html = """
     const bestScoreElement = document.getElementById("best-score");
     const gameOverScreen = document.getElementById("game-over");
     const magicBtn = document.getElementById("magic-btn");
+    const toast = document.getElementById("toast");
     
     let board = [];
     let score = 0;
     let bestScore = localStorage.getItem("2048-best") || 0;
     
-    // Feature: Undo Variables
+    // New Feature Variables
     let historyBoard = null;
     let historyScore = 0;
-    let magicUsed = false;
+    let magicCount = 1;
+    let unlockedTiles = new Set();
+    let toastTimeout;
     
-    // Initialize the UI
     function initUI() {
       document.querySelectorAll('.grid-cell').forEach(e => e.remove());
       bestScoreElement.innerHTML = bestScore;
@@ -182,21 +213,31 @@ game_html = """
         cell.className = "grid-cell val-0";
         gridElement.appendChild(cell);
       }
+      gridElement.appendChild(toast);
       gridElement.appendChild(gameOverScreen); 
+    }
+
+    // --- CELEBRATION TOAST FUNCTION ---
+    function showToast(msg, themeClass, duration = 2500) {
+      toast.innerHTML = msg;
+      toast.className = `show ${themeClass}`;
+      
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toast.className = toast.className.replace("show", "").trim();
+      }, duration);
     }
 
     function resetGame() {
       board = [
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0]
+        [0,0,0,0], [0,0,0,0], [0,0,0,0], [0,0,0,0]
       ];
       score = 0;
       historyBoard = null;
-      magicUsed = false;
-      magicBtn.disabled = false;
-      magicBtn.innerHTML = "✨ Magic (1)";
+      magicCount = 1;
+      unlockedTiles = new Set([2, 4]); // Start with basic tiles known
+      
+      updateMagicUI();
       gameOverScreen.style.display = "none";
       
       addRandomTile();
@@ -204,7 +245,11 @@ game_html = """
       updateUI();
     }
 
-    // --- NEW FEATURE: Undo Move ---
+    function updateMagicUI() {
+      magicBtn.innerHTML = `✨ Magic (${magicCount})`;
+      magicBtn.disabled = (magicCount <= 0);
+    }
+
     function saveState() {
       historyBoard = board.map(row => [...row]);
       historyScore = score;
@@ -214,20 +259,18 @@ game_html = """
       if (historyBoard) {
         board = historyBoard.map(row => [...row]);
         score = historyScore;
-        historyBoard = null; // Can only undo once per turn
+        historyBoard = null; 
         gameOverScreen.style.display = "none";
         updateUI();
       }
     }
 
-    // --- NEW FEATURE: Magic Wand (Destroy lowest tile) ---
     function useMagic() {
-      if (magicUsed) return;
+      if (magicCount <= 0) return;
       
       let minVal = Infinity;
       let targetR = -1; let targetC = -1;
       
-      // Find the lowest non-zero tile
       for (let r=0; r<4; r++) {
          for (let c=0; c<4; c++) {
              if (board[r][c] > 0 && board[r][c] < minVal) {
@@ -237,13 +280,11 @@ game_html = """
          }
       }
       
-      // Destroy it!
       if (targetR !== -1) {
-          saveState(); // You can undo magic!
+          saveState(); 
           board[targetR][targetC] = 0;
-          magicUsed = true;
-          magicBtn.disabled = true;
-          magicBtn.innerHTML = "✨ Used";
+          magicCount--;
+          updateMagicUI();
           updateUI();
       }
     }
@@ -279,16 +320,53 @@ game_html = """
       }
     }
 
-    // Core movement logic (with previous bug fix applied)
+    // --- UPGRADED MERGE LOGIC (Handles Magic & Celebrations) ---
     function slideAndMerge(row) {
       let filtered = row.filter(val => val !== 0);
+      
+      // Track newly merged tiles so we don't spam toasts
+      let highestNewMerge = 0;
+      let earnedMagicThisTurn = false;
+
       for (let i = 0; i < filtered.length - 1; i++) {
         if (filtered[i] !== 0 && filtered[i] === filtered[i+1]) {
           filtered[i] *= 2;
           score += filtered[i];
+          let mergedVal = filtered[i];
+          
+          // FEATURE: Earn Magic for 256, 512, 1024
+          if ([256, 512, 1024].includes(mergedVal)) {
+            magicCount++;
+            earnedMagicThisTurn = true;
+          }
+          
+          // FEATURE: Track if it's a completely new tile
+          if (!unlockedTiles.has(mergedVal)) {
+            unlockedTiles.add(mergedVal);
+            if (mergedVal > highestNewMerge) {
+               highestNewMerge = mergedVal;
+            }
+          }
+          
           filtered[i+1] = 0;
         }
       }
+      
+      // Process Celebrations (delay slightly so UI updates first)
+      if (highestNewMerge === 2048) {
+         setTimeout(() => showToast("🎉 YOU WIN! 2048 REACHED! 🎉", "win-theme", 5000), 200);
+      } else if (highestNewMerge > 0) {
+         setTimeout(() => showToast(`🌟 New Tile Unlocked: ${highestNewMerge}!`, "new-tile-theme"), 200);
+      } else if (earnedMagicThisTurn) {
+         setTimeout(() => {
+            showToast("✨ +1 Magic Wand Earned!", "magic-theme");
+            magicBtn.classList.add("bump");
+            setTimeout(() => magicBtn.classList.remove("bump"), 200);
+         }, 200);
+      }
+
+      updateMagicUI();
+
       filtered = filtered.filter(val => val !== 0);
       while (filtered.length < 4) { filtered.push(0); }
       return filtered;
@@ -348,7 +426,7 @@ game_html = """
     }
 
     function handleInput(direction) {
-      saveState(); // Save state for Undo BEFORE moving
+      saveState(); 
       
       let moved = false;
       if (direction === "Left") moved = moveLeft();
@@ -363,12 +441,10 @@ game_html = """
           gameOverScreen.style.display = "flex";
         }
       } else {
-        // If the move didn't do anything, revoke the save state so we don't waste the Undo
         historyBoard = null; 
       }
     }
 
-    // --- KEYBOARD LISTENER ---
     document.addEventListener("keydown", (e) => {
       if(["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(e.key)) {
           e.preventDefault(); 
@@ -376,7 +452,6 @@ game_html = """
       }
     });
 
-    // --- NEW FEATURE: MOBILE SWIPE LISTENER ---
     let touchStartX = 0;
     let touchStartY = 0;
 
@@ -392,21 +467,17 @@ game_html = """
       let dx = touchEndX - touchStartX;
       let dy = touchEndY - touchStartY;
       
-      // Require a minimum swipe distance to avoid accidental taps
       if (Math.abs(dx) > 30 || Math.abs(dy) > 30) {
         if (Math.abs(dx) > Math.abs(dy)) {
-          // Horizontal swipe
           if (dx > 0) handleInput("Right");
           else handleInput("Left");
         } else {
-          // Vertical swipe
           if (dy > 0) handleInput("Down");
           else handleInput("Up");
         }
       }
     }, false);
 
-    // Boot up the game
     initUI();
     resetGame();
   </script>
@@ -414,5 +485,4 @@ game_html = """
 </html>
 """
 
-# We increased the height slightly to 750 to accommodate the new power-up buttons
 components.html(game_html, height=750)
