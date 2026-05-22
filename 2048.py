@@ -137,7 +137,7 @@ game_html = """
         cell.className = "grid-cell val-0";
         gridElement.appendChild(cell);
       }
-      gridElement.appendChild(gameOverScreen); // keep game over screen on top
+      gridElement.appendChild(gameOverScreen); 
     }
 
     // Start a new game
@@ -186,16 +186,19 @@ game_html = """
     function slideAndMerge(row) {
       // 1. Remove zeros
       let filtered = row.filter(val => val !== 0);
+      
       // 2. Merge adjacent equals
       for (let i = 0; i < filtered.length - 1; i++) {
-        if (filtered[i] === filtered[i+1]) {
+        if (filtered[i] !== 0 && filtered[i] === filtered[i+1]) {
           filtered[i] *= 2;
           score += filtered[i];
           filtered[i+1] = 0;
         }
       }
-      // 3. Remove zeros again (created by merges)
-      filtered = row.filter(val => val !== 0);
+      
+      // 3. Remove zeros again (BUG FIXED HERE: It now filters the merged array!)
+      filtered = filtered.filter(val => val !== 0);
+      
       // 4. Pad with zeros to keep length 4
       while (filtered.length < 4) {
         filtered.push(0);
@@ -203,12 +206,12 @@ game_html = """
       return filtered;
     }
 
-    // Handle board rotations to reuse the left-slide logic for all directions
+    // Handle board rotations
     function moveLeft() {
       let moved = false;
       for (let r = 0; r < 4; r++) {
         let oldRow = [...board[r]];
-        board[r] = slideAndMerge(board[r]);
+        board[r] = slideAndMerge([...board[r]]);
         if (oldRow.join(',') !== board[r].join(',')) moved = true;
       }
       return moved;
@@ -218,7 +221,7 @@ game_html = """
       let moved = false;
       for (let r = 0; r < 4; r++) {
         let oldRow = [...board[r]];
-        board[r] = slideAndMerge(board[r].reverse()).reverse();
+        board[r] = slideAndMerge([...board[r]].reverse()).reverse();
         if (oldRow.join(',') !== board[r].join(',')) moved = true;
       }
       return moved;
@@ -239,8 +242,8 @@ game_html = """
       let moved = false;
       for (let c = 0; c < 4; c++) {
         let oldCol = [board[0][c], board[1][c], board[2][c], board[3][c]];
-        let newCol = slideAndMerge(oldCol.reverse()).reverse();
-        if (oldCol.reverse().join(',') !== newCol.join(',')) moved = true;
+        let newCol = slideAndMerge([...oldCol].reverse()).reverse();
+        if (oldCol.join(',') !== newCol.join(',')) moved = true;
         for (let r = 0; r < 4; r++) board[r][c] = newCol[r];
       }
       return moved;
