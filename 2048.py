@@ -2,15 +2,16 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # Set up the Streamlit page
-st.set_page_config(page_title="Streamlit 2048", layout="centered")
-st.title("🧩 Streamlit 2048")
-st.write("Use your **Arrow Keys** to slide the tiles. Merge matching numbers to reach **2048**!")
+st.set_page_config(page_title="Streamlit 2048 Pro", layout="centered")
+st.title("📱 Streamlit 2048: Pro Edition")
+st.write("Play with **Arrow Keys** on desktop, or **Swipe** on your phone! Use your special abilities below.")
 
-# The HTML, CSS, and JavaScript for the 2048 game
+# The HTML, CSS, and JavaScript for the upgraded 2048 game
 game_html = """
 <!DOCTYPE html>
 <html>
 <head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <style>
     body {
       background-color: #0E1117;
@@ -20,47 +21,88 @@ game_html = """
       flex-direction: column;
       align-items: center;
       margin: 0;
-      padding: 20px;
+      padding: 10px;
+      /* Prevent pull-to-refresh on mobile */
+      overscroll-behavior-y: contain; 
     }
+    
     .header {
       display: flex;
       justify-content: space-between;
-      width: 400px;
-      margin-bottom: 20px;
+      width: 100%;
+      max-width: 400px;
+      margin-bottom: 15px;
       align-items: center;
     }
+    
     .score-container {
       background: #bbada0;
-      padding: 10px 25px;
+      padding: 5px 15px;
       border-radius: 6px;
-      font-size: 20px;
+      font-size: 16px;
       font-weight: bold;
       text-align: center;
       color: white;
     }
-    #score { font-size: 28px; }
+    #score { font-size: 24px; }
+    
+    .controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+      max-width: 400px;
+      margin-bottom: 15px;
+    }
+    
+    button {
+      padding: 10px 15px;
+      font-size: 16px;
+      font-weight: bold;
+      background-color: #8f7a66;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      flex: 1;
+      white-space: nowrap;
+    }
+    button:hover { background-color: #9f8b77; }
+    button:disabled { background-color: #55483c; color: #888; cursor: not-allowed; }
+    
+    #magic-btn { background-color: #8b5a96; }
+    #magic-btn:hover:not(:disabled) { background-color: #a06ab0; }
     
     .grid-container {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 12px;
+      gap: 10px;
       background-color: #bbada0;
-      padding: 12px;
+      padding: 10px;
       border-radius: 8px;
       position: relative;
+      
+      /* Essential for mobile swipe! Prevents the browser from scrolling */
+      touch-action: none; 
+      
+      width: 90vw;
+      max-width: 400px;
+      height: 90vw;
+      max-height: 400px;
+      box-sizing: border-box;
     }
+    
     .grid-cell {
-      width: 80px;
-      height: 80px;
       background-color: #cdc1b4;
       border-radius: 4px;
       display: flex;
       justify-content: center;
       align-items: center;
-      font-size: 36px;
+      font-size: clamp(24px, 6vw, 36px); /* Auto-scales font for mobile */
       font-weight: bold;
       color: #776e65;
-      transition: all 0.15s ease-in-out;
+      transition: all 0.1s ease-in-out;
     }
     
     /* Tile Colors */
@@ -71,65 +113,68 @@ game_html = """
     .val-16 { background-color: #f59563; color: #f9f6f2; }
     .val-32 { background-color: #f67c5f; color: #f9f6f2; }
     .val-64 { background-color: #f65e3b; color: #f9f6f2; }
-    .val-128 { background-color: #edcf72; color: #f9f6f2; font-size: 30px; }
-    .val-256 { background-color: #edcc61; color: #f9f6f2; font-size: 30px; }
-    .val-512 { background-color: #edc850; color: #f9f6f2; font-size: 30px; }
-    .val-1024 { background-color: #edc53f; color: #f9f6f2; font-size: 24px; }
-    .val-2048 { background-color: #edc22e; color: #f9f6f2; font-size: 24px; box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.33); }
+    .val-128 { background-color: #edcf72; color: #f9f6f2; font-size: clamp(20px, 5vw, 30px); }
+    .val-256 { background-color: #edcc61; color: #f9f6f2; font-size: clamp(20px, 5vw, 30px); }
+    .val-512 { background-color: #edc850; color: #f9f6f2; font-size: clamp(20px, 5vw, 30px); }
+    .val-1024 { background-color: #edc53f; color: #f9f6f2; font-size: clamp(16px, 4vw, 24px); }
+    .val-2048 { background-color: #edc22e; color: #f9f6f2; font-size: clamp(16px, 4vw, 24px); box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.33); }
 
     #game-over {
       display: none;
       position: absolute;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(238, 228, 218, 0.73);
+      background: rgba(238, 228, 218, 0.85);
       border-radius: 8px;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       color: #776e65;
-      font-size: 40px;
+      font-size: 36px;
       font-weight: bold;
+      z-index: 10;
     }
-    button {
-      margin-top: 20px;
-      padding: 10px 20px;
-      font-size: 18px;
-      font-weight: bold;
-      background-color: #8f7a66;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    button:hover { background-color: #9f8b77; }
   </style>
 </head>
 <body>
 
   <div class="header">
     <div class="score-container">SCORE<br><span id="score">0</span></div>
-    <button onclick="resetGame()">Restart</button>
+    <div class="score-container">BEST<br><span id="best-score">0</span></div>
+  </div>
+
+  <div class="controls">
+    <button onclick="undoMove()" id="undo-btn">↩️ Undo</button>
+    <button onclick="useMagic()" id="magic-btn">✨ Magic (1)</button>
+    <button onclick="resetGame()">🔄 Restart</button>
   </div>
 
   <div class="grid-container" id="grid">
     <div id="game-over">
       Game Over!
-      <button onclick="resetGame()">Try Again</button>
+      <button onclick="resetGame()" style="margin-top: 20px;">Try Again</button>
     </div>
   </div>
 
   <script>
     const gridElement = document.getElementById("grid");
     const scoreElement = document.getElementById("score");
+    const bestScoreElement = document.getElementById("best-score");
     const gameOverScreen = document.getElementById("game-over");
+    const magicBtn = document.getElementById("magic-btn");
     
     let board = [];
     let score = 0;
+    let bestScore = localStorage.getItem("2048-best") || 0;
     
-    // Initialize the grid UI
+    // Feature: Undo Variables
+    let historyBoard = null;
+    let historyScore = 0;
+    let magicUsed = false;
+    
+    // Initialize the UI
     function initUI() {
-      // Clear existing cells
       document.querySelectorAll('.grid-cell').forEach(e => e.remove());
+      bestScoreElement.innerHTML = bestScore;
       
       for (let i = 0; i < 16; i++) {
         let cell = document.createElement("div");
@@ -140,7 +185,6 @@ game_html = """
       gridElement.appendChild(gameOverScreen); 
     }
 
-    // Start a new game
     function resetGame() {
       board = [
         [0,0,0,0],
@@ -149,13 +193,61 @@ game_html = """
         [0,0,0,0]
       ];
       score = 0;
+      historyBoard = null;
+      magicUsed = false;
+      magicBtn.disabled = false;
+      magicBtn.innerHTML = "✨ Magic (1)";
       gameOverScreen.style.display = "none";
+      
       addRandomTile();
       addRandomTile();
       updateUI();
     }
 
-    // Add a 2 or 4 to a random empty spot
+    // --- NEW FEATURE: Undo Move ---
+    function saveState() {
+      historyBoard = board.map(row => [...row]);
+      historyScore = score;
+    }
+
+    function undoMove() {
+      if (historyBoard) {
+        board = historyBoard.map(row => [...row]);
+        score = historyScore;
+        historyBoard = null; // Can only undo once per turn
+        gameOverScreen.style.display = "none";
+        updateUI();
+      }
+    }
+
+    // --- NEW FEATURE: Magic Wand (Destroy lowest tile) ---
+    function useMagic() {
+      if (magicUsed) return;
+      
+      let minVal = Infinity;
+      let targetR = -1; let targetC = -1;
+      
+      // Find the lowest non-zero tile
+      for (let r=0; r<4; r++) {
+         for (let c=0; c<4; c++) {
+             if (board[r][c] > 0 && board[r][c] < minVal) {
+                 minVal = board[r][c]; 
+                 targetR = r; targetC = c;
+             }
+         }
+      }
+      
+      // Destroy it!
+      if (targetR !== -1) {
+          saveState(); // You can undo magic!
+          board[targetR][targetC] = 0;
+          magicUsed = true;
+          magicBtn.disabled = true;
+          magicBtn.innerHTML = "✨ Used";
+          updateUI();
+      }
+    }
+
     function addRandomTile() {
       let emptyCells = [];
       for (let r = 0; r < 4; r++) {
@@ -169,7 +261,6 @@ game_html = """
       }
     }
 
-    // Update the HTML to match the board array
     function updateUI() {
       for (let r = 0; r < 4; r++) {
         for (let c = 0; c < 4; c++) {
@@ -180,14 +271,17 @@ game_html = """
         }
       }
       scoreElement.innerHTML = score;
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestScoreElement.innerHTML = bestScore;
+        localStorage.setItem("2048-best", bestScore);
+      }
     }
 
-    // Core logic for sliding an array and merging duplicates
+    // Core movement logic (with previous bug fix applied)
     function slideAndMerge(row) {
-      // 1. Remove zeros
       let filtered = row.filter(val => val !== 0);
-      
-      // 2. Merge adjacent equals
       for (let i = 0; i < filtered.length - 1; i++) {
         if (filtered[i] !== 0 && filtered[i] === filtered[i+1]) {
           filtered[i] *= 2;
@@ -195,18 +289,11 @@ game_html = """
           filtered[i+1] = 0;
         }
       }
-      
-      // 3. Remove zeros again (BUG FIXED HERE: It now filters the merged array!)
       filtered = filtered.filter(val => val !== 0);
-      
-      // 4. Pad with zeros to keep length 4
-      while (filtered.length < 4) {
-        filtered.push(0);
-      }
+      while (filtered.length < 4) { filtered.push(0); }
       return filtered;
     }
 
-    // Handle board rotations
     function moveLeft() {
       let moved = false;
       for (let r = 0; r < 4; r++) {
@@ -249,7 +336,6 @@ game_html = """
       return moved;
     }
 
-    // Check if any moves are possible
     function checkGameOver() {
       for (let r = 0; r < 4; r++) {
         for (let c = 0; c < 4; c++) {
@@ -261,17 +347,14 @@ game_html = """
       return true;
     }
 
-    // Keyboard listener
-    document.addEventListener("keydown", (e) => {
-      if([37, 38, 39, 40].indexOf(e.keyCode) > -1) {
-          e.preventDefault(); // Prevent page scrolling
-      }
+    function handleInput(direction) {
+      saveState(); // Save state for Undo BEFORE moving
       
       let moved = false;
-      if (e.key === "ArrowLeft") moved = moveLeft();
-      else if (e.key === "ArrowRight") moved = moveRight();
-      else if (e.key === "ArrowUp") moved = moveUp();
-      else if (e.key === "ArrowDown") moved = moveDown();
+      if (direction === "Left") moved = moveLeft();
+      else if (direction === "Right") moved = moveRight();
+      else if (direction === "Up") moved = moveUp();
+      else if (direction === "Down") moved = moveDown();
 
       if (moved) {
         addRandomTile();
@@ -279,8 +362,49 @@ game_html = """
         if (checkGameOver()) {
           gameOverScreen.style.display = "flex";
         }
+      } else {
+        // If the move didn't do anything, revoke the save state so we don't waste the Undo
+        historyBoard = null; 
+      }
+    }
+
+    // --- KEYBOARD LISTENER ---
+    document.addEventListener("keydown", (e) => {
+      if(["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(e.key)) {
+          e.preventDefault(); 
+          handleInput(e.key.replace("Arrow", ""));
       }
     });
+
+    // --- NEW FEATURE: MOBILE SWIPE LISTENER ---
+    let touchStartX = 0;
+    let touchStartY = 0;
+
+    gridElement.addEventListener('touchstart', function(e) {
+      touchStartX = e.changedTouches[0].screenX;
+      touchStartY = e.changedTouches[0].screenY;
+    }, false);
+
+    gridElement.addEventListener('touchend', function(e) {
+      let touchEndX = e.changedTouches[0].screenX;
+      let touchEndY = e.changedTouches[0].screenY;
+      
+      let dx = touchEndX - touchStartX;
+      let dy = touchEndY - touchStartY;
+      
+      // Require a minimum swipe distance to avoid accidental taps
+      if (Math.abs(dx) > 30 || Math.abs(dy) > 30) {
+        if (Math.abs(dx) > Math.abs(dy)) {
+          // Horizontal swipe
+          if (dx > 0) handleInput("Right");
+          else handleInput("Left");
+        } else {
+          // Vertical swipe
+          if (dy > 0) handleInput("Down");
+          else handleInput("Up");
+        }
+      }
+    }, false);
 
     // Boot up the game
     initUI();
@@ -290,5 +414,5 @@ game_html = """
 </html>
 """
 
-# Render the game. Height 650 is perfect for the board + score header
-components.html(game_html, height=650)
+# We increased the height slightly to 750 to accommodate the new power-up buttons
+components.html(game_html, height=750)
